@@ -1,0 +1,30 @@
+#!/usr/bin/env node
+const http = require('http');
+
+let since = parseInt(process.argv[2] || '0');
+
+function poll() {
+  const req = http.request(`http://localhost:5002/poll?since=${since}`, (res) => {
+    let b = '';
+    res.on('data', c => b += c);
+    res.on('end', () => {
+      try {
+        const data = JSON.parse(b);
+        since = data.index;
+        data.messages.forEach(m => {
+          const time = new Date(m.ts).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+          console.log(`\n[${time}] ${m.text}`);
+        });
+      } catch (e) {}
+      poll(); // immediately re-poll
+    });
+  });
+  req.on('error', () => {
+    console.log('(reconnecting...)');
+    setTimeout(poll, 2000);
+  });
+  req.end();
+}
+
+console.log('Listening for messages...');
+poll();

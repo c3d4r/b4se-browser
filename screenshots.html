@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Screenshots</title>
+  <style>
+    body { background: #1c1917; color: #e7e5e4; font-family: system-ui, sans-serif; margin: 0; padding: 16px; }
+    h1 { font-size: 14px; color: #a78bfa; margin: 0 0 12px; }
+    .grid { display: flex; flex-wrap: wrap; gap: 12px; }
+    .shot { background: #292524; border: 1px solid #44403c; border-radius: 8px; overflow: hidden; }
+    .shot img { display: block; max-width: 280px; height: auto; }
+    .shot .label { padding: 6px 10px; font-size: 11px; color: #a8a29e; border-top: 1px solid #44403c; }
+    .meta { margin-top: 16px; font-size: 11px; color: #57534e; }
+  </style>
+</head>
+<body>
+  <h1>Screenshots</h1>
+  <div class="grid" id="grid"></div>
+  <div class="meta" id="meta"></div>
+  <script>
+    const files = [
+      'screenshot-1-closed.png',
+      'screenshot-2-icons.png',
+      'screenshot-3-full.png',
+      'screenshot-toast-single.png',
+      'screenshot-toast-stack.png',
+      'screenshot-preview-nav.png',
+      'screenshot-chat-drawer.png',
+      'screenshot-chat-rhs.png',
+      'screenshot-blue-read.png',
+      'screenshot-blue-icons.png',
+      'screenshot-blue-full.png',
+      'screenshot-chat-page.png',
+    ];
+    const grid = document.getElementById('grid');
+    const bust = '?t=' + Date.now();
+    files.forEach(f => {
+      const div = document.createElement('div');
+      div.className = 'shot';
+      const img = document.createElement('img');
+      img.src = f + bust;
+      img.alt = f;
+      img.onerror = () => div.remove();
+      const label = document.createElement('div');
+      label.className = 'label';
+      label.textContent = f.replace('screenshot-', '').replace('.png', '');
+      div.appendChild(img);
+      div.appendChild(label);
+      grid.appendChild(div);
+    });
+    document.getElementById('meta').textContent = 'Loaded ' + new Date().toLocaleTimeString();
+  </script>
+</body>
+</html>

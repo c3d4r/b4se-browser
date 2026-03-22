@@ -1,0 +1,768 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>Markdown Page</title>
+
+  <!-- Tailwind CSS -->
+  <script src="https://cdn.tailwindcss.com"></script>
+
+  <!-- Lucide Icons (SVG sprite) -->
+  <script src="https://unpkg.com/lucide@latest"></script>
+
+  <!-- Marked (markdown -> HTML) -->
+  <script src="https://cdn.jsdelivr.net/npm/marked@12/marked.min.js"></script>
+
+  <!-- KaTeX (LaTeX math rendering) -->
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16/dist/katex.min.css">
+  <script src="https://cdn.jsdelivr.net/npm/katex@0.16/dist/katex.min.js"></script>
+
+  <link rel="stylesheet" href="style.css?v=3">
+
+  <!-- Alpine component registered BEFORE Alpine loads (inline = synchronous) -->
+  <script>
+    // Promise that resolves once CodeMirror module is ready
+    var _editorResolve;
+    window.editorReady = new Promise(function (r) { _editorResolve = r; });
+
+    var _editorView = null;
+
+    var sampleDoc = [
+      "# Welcome to Markdown Page",
+      "",
+      "A **mobile-first** markdown editor inspired by [Obsidian](https://obsidian.md).",
+      "",
+      "## Features",
+      "",
+      "- Live **preview** with one-tap toggle",
+      "- Full CodeMirror 6 editor (same engine as Obsidian)",
+      "- Syntax highlighting for *all* markdown elements",
+      "- Dark theme with `Tailwind CSS`",
+      "",
+      "## Code example",
+      "",
+      "```js",
+      "function greet(name) {",
+      "  return `Hello, ${name}!`;",
+      "}",
+      "```",
+      "",
+      "## Math",
+      "",
+      "Inline math like $E = mc^2$ works with single dollar signs.",
+      "",
+      "Display math uses double dollars:",
+      "",
+      "$$",
+      "\\\\nabla \\\\times \\\\mathbf{E} = -\\\\frac{\\\\partial \\\\mathbf{B}}{\\\\partial t}",
+      "$$",
+      "",
+      "$$",
+      "\\\\int_{-\\\\infty}^{\\\\infty} e^{-x^2} dx = \\\\sqrt{\\\\pi}",
+      "$$",
+      "",
+      "## Checklist",
+      "",
+      "- [x] Set up project",
+      "- [x] Add CodeMirror editor",
+      "- [ ] Connect to serverless backend",
+      "- [ ] Sync with Obsidian vault",
+      "",
+      "---",
+      "",
+      "> \"The best way to predict the future is to invent it.\"",
+      "> — Alan Kay",
+      "",
+      "Feel free to tap **Edit** and start writing!",
+    ].join("\n");
+
+    // ── KaTeX extension for marked ──────────────────────
+    // Handles $$...$$ (display) and $...$ (inline) math
+    var mathExtension = {
+      extensions: [
+        {
+          name: "blockMath",
+          level: "block",
+          start: function (src) { var m = src.match(/\$\$/); return m ? m.index : undefined; },
+          tokenizer: function (src) {
+            var match = src.match(/^\$\$([\s\S]+?)\$\$/);
+            if (match) {
+              return { type: "blockMath", raw: match[0], text: match[1].trim() };
+            }
+          },
+          renderer: function (token) {
+            try {
+              return '<div class="math-display">' + katex.renderToString(token.text, { displayMode: true, throwOnError: false }) + '</div>';
+            } catch (e) {
+              return '<div class="math-display math-error">' + token.text + '</div>';
+            }
+          }
+        },
+        {
+          name: "inlineMath",
+          level: "inline",
+          start: function (src) { var m = src.match(/\$/); return m ? m.index : undefined; },
+          tokenizer: function (src) {
+            var match = src.match(/^\$([^\$\n]+?)\$/);
+            if (match) {
+              return { type: "inlineMath", raw: match[0], text: match[1].trim() };
+            }
+          },
+          renderer: function (token) {
+            try {
+              return katex.renderToString(token.text, { displayMode: false, throwOnError: false });
+            } catch (e) {
+              return '<span class="math-error">' + token.text + '</span>';
+            }
+          }
+        }
+      ]
+    };
+    marked.use(mathExtension);
+
+    function countWords(text) {
+      var t = text.trim();
+      return t ? t.split(/\s+/).length : 0;
+    }
+
+    // ── Sample note previews for long-press ──────────────
+    var notePreviews = {
+      "obsidian": {
+        title: "Obsidian",
+        body: "A powerful **knowledge base** that works on local Markdown files.\n\n- Graph view of linked notes\n- 1,000+ community plugins\n- End-to-end encryption sync\n- Used by researchers, developers, and writers worldwide"
+      },
+      "backpropagation": {
+        title: "Backpropagation",
+        body: "The backbone of neural network training.\n\n$$\\frac{\\partial L}{\\partial w} = \\frac{\\partial L}{\\partial a} \\cdot \\frac{\\partial a}{\\partial w}$$\n\nUses the **chain rule** to compute gradients layer by layer, from output back to input."
+      },
+      "attention-mechanism": {
+        title: "Attention Mechanism",
+        body: "Allows models to focus on relevant parts of the input.\n\n$$\\text{Attention}(Q,K,V) = \\text{softmax}\\left(\\frac{QK^T}{\\sqrt{d_k}}\\right)V$$\n\nKey innovation behind **Transformers** and modern LLMs."
+      },
+      "gradient-descent": {
+        title: "Gradient Descent",
+        body: "An optimization algorithm that iteratively moves toward a minimum.\n\n$$w_{t+1} = w_t - \\eta \\nabla L(w_t)$$\n\nVariants: **SGD**, Adam, RMSprop, AdaGrad."
+      },
+      "transformer-architecture": {
+        title: "Transformer Architecture",
+        body: "Introduced in *Attention Is All You Need* (2017).\n\n- Self-attention replaces recurrence\n- Enables massive parallelization\n- Foundation for GPT, BERT, and all modern LLMs"
+      },
+      "loss-functions": {
+        title: "Loss Functions",
+        body: "Measures how far predictions are from targets.\n\n- **MSE**: $(y - \\hat{y})^2$\n- **Cross-entropy**: $-\\sum y \\log \\hat{y}$\n- **Hinge loss**: $\\max(0, 1-y\\hat{y})$"
+      },
+      "index": {
+        title: "Index",
+        body: "The main entry point to this vault.\n\nLinks to all major topics and serves as a **Map of Content** (MOC)."
+      },
+      "getting-started": {
+        title: "Getting Started",
+        body: "Quick start guide for the markdown editor.\n\n1. Tap **Edit** to enter the editor\n2. Write in Markdown syntax\n3. Tap **Read** to see rendered output"
+      }
+    };
+
+    // Match a link to a preview key
+    function findPreviewKey(el) {
+      var text = (el.textContent || '').trim().toLowerCase();
+      var href = (el.getAttribute('href') || '').toLowerCase();
+      // Direct match on text
+      if (notePreviews[text]) return text;
+      // Match filename-style keys
+      for (var key in notePreviews) {
+        if (text.indexOf(key) !== -1 || href.indexOf(key) !== -1) return key;
+        // Also match with spaces instead of hyphens
+        var spaced = key.replace(/-/g, ' ');
+        if (text.indexOf(spaced) !== -1) return key;
+      }
+      // For external links, generate a generic preview
+      if (href.startsWith('http')) return '_external_';
+      return null;
+    }
+
+    document.addEventListener("alpine:init", function () {
+      Alpine.data("markdownApp", function () {
+        return {
+          editing: false,
+          livePreview: true,    // true = Obsidian-style, false = source
+          content: sampleDoc,
+          editorLoading: false,
+
+          // ── Panel state ──
+          lhsState: 'gone',          // 'gone' | 'icons' | 'full'
+          lhsSection: 'files',       // 'files' | 'search' | 'recent' | 'unread'
+          rhsOpen: false,
+          rhsTab: 'links',           // 'links' | 'backlinks' | 'history' | 'info'
+
+          // ── Link preview state ──
+          previewVisible: false,
+          previewTitle: '',
+          previewHtml: '',
+          previewX: 0,
+          previewY: 0,
+
+          init() {
+            this.initLinkPreview();
+          },
+
+          get title() {
+            var m = this.content.match(/^#\s+(.+)/m);
+            return m ? m[1] : "Untitled";
+          },
+
+          get rendered() {
+            return marked.parse(this.content);
+          },
+
+          get wordCount() {
+            return countWords(this.content);
+          },
+
+          get modeLabel() {
+            if (!this.editing) return "Reading";
+            return this.livePreview ? "Live Preview" : "Source";
+          },
+
+          // ── Panel methods ──
+          toggleLhs() {
+            if (this.lhsState === 'gone') {
+              this.lhsState = 'icons';
+            } else {
+              this.lhsState = 'gone';
+            }
+          },
+
+          selectLhsSection(section) {
+            if (this.lhsState === 'full' && this.lhsSection === section) {
+              // Clicking active section collapses to icons
+              this.lhsState = 'icons';
+            } else {
+              this.lhsSection = section;
+              this.lhsState = 'full';
+            }
+          },
+
+          toggleRhs() {
+            this.rhsOpen = !this.rhsOpen;
+          },
+
+          // ── Link preview methods ──
+          initLinkPreview() {
+            var self = this;
+            var container = document.body;
+            var isTouchDevice = 'ontouchstart' in window;
+
+            if (isTouchDevice) {
+              // Mobile: tap a link shows preview, prevents navigation
+              container.addEventListener('click', function(e) {
+                var link = e.target.closest('a, .lhs-item, .rhs-link-item');
+                if (!link) {
+                  // Tap away dismisses
+                  if (self.previewVisible) self.previewVisible = false;
+                  return;
+                }
+                var key = findPreviewKey(link);
+                if (!key) return; // no preview available, let native behavior happen
+
+                e.preventDefault();
+                e.stopPropagation();
+
+                if (self.previewVisible) {
+                  // Already showing — dismiss and let next tap navigate
+                  self.previewVisible = false;
+                  return;
+                }
+
+                var rect = link.getBoundingClientRect();
+                var x = rect.left + rect.width / 2;
+                var y = rect.top;
+                self._showPreview(link, x, y);
+              }, true); // capture phase to beat other handlers
+            } else {
+              // Desktop: hover with delay
+              var hoverTimer = null;
+              container.addEventListener('mouseover', function(e) {
+                var link = e.target.closest('a, .lhs-item, .rhs-link-item');
+                if (!link) return;
+                clearTimeout(hoverTimer);
+                hoverTimer = setTimeout(function() {
+                  var rect = link.getBoundingClientRect();
+                  var x = rect.left + rect.width / 2;
+                  var y = rect.top;
+                  self._showPreview(link, x, y);
+                }, 400);
+              });
+              container.addEventListener('mouseout', function(e) {
+                var link = e.target.closest('a, .lhs-item, .rhs-link-item');
+                if (!link) return;
+                clearTimeout(hoverTimer);
+                self.previewVisible = false;
+              });
+            }
+          },
+
+          _showPreview(el, x, y) {
+            var key = findPreviewKey(el);
+            var preview = key && key !== '_external_' ? notePreviews[key] : null;
+
+            if (!preview && !key) return; // nothing to show
+
+            if (!preview) {
+              var href = el.getAttribute('href') || el.textContent;
+              this.previewTitle = el.textContent || href;
+              this.previewHtml = '<p class="text-stone-400 text-xs italic">External link</p><p class="text-indigo-400 text-xs break-all">' + href + '</p>';
+            } else {
+              this.previewTitle = preview.title;
+              this.previewHtml = marked.parse(preview.body);
+            }
+
+            // Position above the link, flip below if near top
+            var pad = 12;
+            var cardW = 280;
+            var cardH = 200;
+            var vw = window.innerWidth;
+
+            var left = Math.min(Math.max(pad, x - cardW / 2), vw - cardW - pad);
+            var top = y - cardH - 12; // above
+            if (top < pad) top = y + 32; // flip below
+
+            this.previewX = left;
+            this.previewY = top;
+            this.previewVisible = true;
+          },
+
+          // ── Editor methods ──
+          toggle() {
+            if (this.editing && _editorView) {
+              this.content = _editorView.state.doc.toString();
+            }
+            this.editing = !this.editing;
+
+            if (this.editing) {
+              this.mountEditor();
+            }
+          },
+
+          toggleSource() {
+            if (!this.editing) return;
+            if (_editorView) {
+              this.content = _editorView.state.doc.toString();
+            }
+            this.livePreview = !this.livePreview;
+            this.mountEditor();
+          },
+
+          async mountEditor() {
+            var parent = document.getElementById("editor");
+            this.editorLoading = true;
+
+            // Wait for CodeMirror module to be ready
+            var createEditor = await window.editorReady;
+            this.editorLoading = false;
+
+            // Destroy previous
+            if (_editorView) { _editorView.destroy(); _editorView = null; }
+            parent.innerHTML = "";
+
+            var self = this;
+            _editorView = createEditor(parent, this.content, function (newDoc) {
+              self.content = newDoc;
+            }, this.livePreview);
+            _editorView.focus();
+          }
+        };
+      });
+    });
+  </script>
+
+  <!-- Alpine.js (defer — runs after inline script above, so alpine:init listener is set) -->
+  <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
+
+  <!-- CodeMirror 6 module (loads async, resolves editorReady when done) -->
+  <script type="module" src="app.js"></script>
+</head>
+<body class="bg-stone-950 text-stone-200 h-screen overflow-hidden"
+      x-data="markdownApp"
+      @keydown.escape="if (editing) toggle()">
+
+  <!-- App shell: flex row with LHS | Content | RHS -->
+  <div class="flex h-full w-full relative">
+
+    <!-- ═══ LHS Navigation ═══ -->
+    <aside
+      class="lhs-panel shrink-0 h-full flex bg-stone-900 border-r border-stone-800"
+      :class="{
+        'lhs-gone': lhsState === 'gone',
+        'lhs-icons': lhsState === 'icons',
+        'lhs-full': lhsState === 'full'
+      }"
+    >
+      <!-- Icon strip (always visible when lhsState != gone) -->
+      <div class="lhs-icon-strip flex flex-col items-center py-2 gap-1 border-r border-stone-800/50">
+        <!-- Section icons -->
+        <button
+          @click="selectLhsSection('files')"
+          class="lhs-icon-btn"
+          :class="lhsState === 'full' && lhsSection === 'files' ? 'text-violet-400 bg-stone-800' : 'text-stone-500 hover:text-stone-300 hover:bg-stone-800/50'"
+          title="Files"
+        >
+          <i data-lucide="file-text"></i>
+        </button>
+
+        <button
+          @click="selectLhsSection('search')"
+          class="lhs-icon-btn"
+          :class="lhsState === 'full' && lhsSection === 'search' ? 'text-violet-400 bg-stone-800' : 'text-stone-500 hover:text-stone-300 hover:bg-stone-800/50'"
+          title="Search"
+        >
+          <i data-lucide="search"></i>
+        </button>
+
+        <button
+          @click="selectLhsSection('recent')"
+          class="lhs-icon-btn"
+          :class="lhsState === 'full' && lhsSection === 'recent' ? 'text-violet-400 bg-stone-800' : 'text-stone-500 hover:text-stone-300 hover:bg-stone-800/50'"
+          title="Recent"
+        >
+          <i data-lucide="clock"></i>
+        </button>
+
+        <button
+          @click="selectLhsSection('unread')"
+          class="lhs-icon-btn"
+          :class="lhsState === 'full' && lhsSection === 'unread' ? 'text-violet-400 bg-stone-800' : 'text-stone-500 hover:text-stone-300 hover:bg-stone-800/50'"
+          title="Unread"
+        >
+          <i data-lucide="mail"></i>
+        </button>
+      </div>
+
+      <!-- Expanded panel content -->
+      <div class="lhs-content flex-1 overflow-y-auto" x-show="lhsState === 'full'" x-transition.opacity.duration.150ms>
+
+        <!-- Files section -->
+        <div x-show="lhsSection === 'files'">
+          <div class="px-3 py-3 text-xs font-semibold text-stone-400 uppercase tracking-wider">Files</div>
+          <div class="px-2 space-y-0.5">
+            <div class="lhs-item group">
+              <i data-lucide="folder" class="w-4 h-4 text-stone-500 shrink-0"></i>
+              <span class="truncate">notes/</span>
+              <i data-lucide="chevron-right" class="w-3 h-3 text-stone-600 ml-auto"></i>
+            </div>
+            <div class="lhs-item lhs-item-active">
+              <i data-lucide="file-text" class="w-4 h-4 text-violet-400 shrink-0"></i>
+              <span class="truncate">Welcome to Markdown Page</span>
+            </div>
+            <div class="lhs-item group">
+              <i data-lucide="file-text" class="w-4 h-4 text-stone-500 shrink-0"></i>
+              <span class="truncate">backpropagation.md</span>
+            </div>
+            <div class="lhs-item group">
+              <i data-lucide="file-text" class="w-4 h-4 text-stone-500 shrink-0"></i>
+              <span class="truncate">attention-mechanism.md</span>
+            </div>
+            <div class="lhs-item group">
+              <i data-lucide="file-text" class="w-4 h-4 text-stone-500 shrink-0"></i>
+              <span class="truncate">gradient-descent.md</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Search section -->
+        <div x-show="lhsSection === 'search'">
+          <div class="px-3 py-3 text-xs font-semibold text-stone-400 uppercase tracking-wider">Search</div>
+          <div class="px-3 pb-3">
+            <div class="flex items-center gap-2 px-2.5 py-1.5 rounded-md bg-stone-800 border border-stone-700">
+              <i data-lucide="search" class="w-3.5 h-3.5 text-stone-500 shrink-0"></i>
+              <input type="text" placeholder="Search notes..." class="bg-transparent text-sm text-stone-300 placeholder-stone-600 outline-none w-full">
+            </div>
+          </div>
+          <div class="px-3 text-xs text-stone-600 italic">Type to search across all notes</div>
+        </div>
+
+        <!-- Recent section -->
+        <div x-show="lhsSection === 'recent'">
+          <div class="px-3 py-3 text-xs font-semibold text-stone-400 uppercase tracking-wider">Recent</div>
+          <div class="px-2 space-y-0.5">
+            <div class="lhs-item group">
+              <i data-lucide="file-text" class="w-4 h-4 text-stone-500 shrink-0"></i>
+              <span class="truncate">Welcome to Markdown Page</span>
+              <span class="text-[10px] text-stone-600 ml-auto shrink-0">2m ago</span>
+            </div>
+            <div class="lhs-item group">
+              <i data-lucide="file-text" class="w-4 h-4 text-stone-500 shrink-0"></i>
+              <span class="truncate">backpropagation.md</span>
+              <span class="text-[10px] text-stone-600 ml-auto shrink-0">1h ago</span>
+            </div>
+            <div class="lhs-item group">
+              <i data-lucide="file-text" class="w-4 h-4 text-stone-500 shrink-0"></i>
+              <span class="truncate">attention-mechanism.md</span>
+              <span class="text-[10px] text-stone-600 ml-auto shrink-0">3h ago</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Unread section -->
+        <div x-show="lhsSection === 'unread'">
+          <div class="px-3 py-3 text-xs font-semibold text-stone-400 uppercase tracking-wider">Unread</div>
+          <div class="px-2 space-y-0.5">
+            <div class="lhs-item group">
+              <i data-lucide="file-text" class="w-4 h-4 text-amber-400 shrink-0"></i>
+              <span class="truncate">transformer-architecture.md</span>
+              <span class="w-1.5 h-1.5 rounded-full bg-violet-400 ml-auto shrink-0"></span>
+            </div>
+            <div class="lhs-item group">
+              <i data-lucide="file-text" class="w-4 h-4 text-amber-400 shrink-0"></i>
+              <span class="truncate">loss-functions.md</span>
+              <span class="w-1.5 h-1.5 rounded-full bg-violet-400 ml-auto shrink-0"></span>
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </aside>
+
+    <!-- ═══ Center Content ═══ -->
+    <div class="main-content flex-1 flex flex-col min-w-0 h-full"
+         :class="{
+           'lhs-is-gone': lhsState === 'gone',
+           'lhs-is-icons': lhsState === 'icons',
+           'lhs-is-full': lhsState === 'full'
+         }"
+    >
+
+      <!-- Top bar -->
+      <header class="sticky top-0 z-20 flex items-center justify-between px-3 py-2 bg-stone-900/80 backdrop-blur border-b border-stone-800">
+        <div class="flex items-center gap-2 min-w-0">
+          <!-- LHS hamburger toggle -->
+          <button
+            @click="toggleLhs()"
+            class="p-1.5 rounded-lg text-stone-400 hover:text-stone-200 hover:bg-stone-800 transition-colors"
+            title="Toggle navigation"
+          >
+            <span x-show="lhsState === 'gone'"><i data-lucide="menu" class="w-4 h-4"></i></span>
+            <span x-show="lhsState !== 'gone'"><i data-lucide="panel-left-close" class="w-4 h-4"></i></span>
+          </button>
+          <h1 class="text-sm font-semibold tracking-wide text-stone-400 truncate" x-text="title"></h1>
+        </div>
+        <div class="shrink-0 ml-3 flex items-center gap-1.5">
+          <!-- Live/Source toggle (only when editing) -->
+          <button
+            x-show="editing"
+            x-transition
+            @click="toggleSource()"
+            class="px-2.5 py-1.5 rounded-lg text-xs font-medium transition-colors bg-stone-800 text-stone-400 hover:bg-stone-700 hover:text-stone-200"
+            x-text="livePreview ? 'Source' : 'Live'"
+          ></button>
+          <!-- Read/Edit toggle -->
+          <button
+            @click="toggle()"
+            class="px-3 py-1.5 rounded-lg text-xs font-medium transition-colors"
+            :class="editing
+              ? 'bg-violet-600 text-white hover:bg-violet-500'
+              : 'bg-stone-800 text-stone-300 hover:bg-stone-700'"
+          >
+            <span x-text="editing ? 'Read' : 'Edit'"></span>
+          </button>
+          <!-- RHS tools toggle -->
+          <button
+            @click="toggleRhs()"
+            class="p-1.5 rounded-lg transition-colors"
+            :class="rhsOpen ? 'text-violet-400 bg-stone-800' : 'text-stone-400 hover:text-stone-200 hover:bg-stone-800'"
+            title="Toggle tools panel"
+          >
+            <i data-lucide="panel-right" class="w-4 h-4"></i>
+          </button>
+        </div>
+      </header>
+
+      <!-- Preview pane -->
+      <main
+        x-show="!editing"
+        x-transition:enter="transition ease-out duration-150"
+        x-transition:enter-start="opacity-0 translate-y-1"
+        x-transition:enter-end="opacity-100 translate-y-0"
+        class="flex-1 overflow-y-auto px-5 py-6"
+      >
+        <article class="prose prose-invert prose-stone max-w-none" x-html="rendered"></article>
+      </main>
+
+      <!-- Editor pane -->
+      <div
+        x-show="editing"
+        x-transition:enter="transition ease-out duration-150"
+        x-transition:enter-start="opacity-0 translate-y-1"
+        x-transition:enter-end="opacity-100 translate-y-0"
+        class="flex-1 overflow-hidden flex flex-col"
+      >
+        <!-- Loading indicator while CodeMirror loads from CDN -->
+        <div x-show="editorLoading" class="flex items-center justify-center py-12 text-stone-500 text-sm">
+          Loading editor...
+        </div>
+        <div id="editor" class="flex-1 overflow-y-auto"></div>
+      </div>
+
+    </div>
+
+    <!-- ═══ RHS Tools Panel ═══ -->
+    <!-- Mobile backdrop -->
+    <div
+      x-show="rhsOpen"
+      x-transition:enter="transition ease-out duration-200"
+      x-transition:enter-start="opacity-0"
+      x-transition:enter-end="opacity-100"
+      x-transition:leave="transition ease-in duration-150"
+      x-transition:leave-start="opacity-100"
+      x-transition:leave-end="opacity-0"
+      @click="rhsOpen = false"
+      class="md:hidden fixed inset-0 bg-black/50 z-30"
+    ></div>
+
+    <aside
+      class="rhs-panel shrink-0 h-full z-40 bg-stone-900 border-l border-stone-800 flex flex-col"
+      :class="rhsOpen ? 'rhs-open' : 'rhs-gone'"
+    >
+      <!-- RHS tab bar -->
+      <div class="flex border-b border-stone-800 shrink-0">
+        <template x-for="tab in [{id:'links',label:'Links',icon:'link'},{id:'backlinks',label:'Backlinks',icon:'arrow-left'},{id:'history',label:'History',icon:'git-commit-horizontal'},{id:'info',label:'Info',icon:'info'}]">
+          <button
+            @click="rhsTab = tab.id"
+            class="flex-1 px-2 py-2.5 text-[11px] font-medium transition-colors text-center"
+            :class="rhsTab === tab.id ? 'text-violet-400 border-b-2 border-violet-400' : 'text-stone-500 hover:text-stone-300'"
+            x-text="tab.label"
+          ></button>
+        </template>
+      </div>
+
+      <!-- RHS tab content -->
+      <div class="flex-1 overflow-y-auto">
+
+        <!-- Links -->
+        <div x-show="rhsTab === 'links'" class="p-3 space-y-1.5">
+          <div class="text-xs font-semibold text-stone-400 uppercase tracking-wider mb-2">Outgoing Links</div>
+          <a href="#" class="rhs-link-item">
+            <i data-lucide="file-text" class="w-3.5 h-3.5 text-stone-500 shrink-0"></i>
+            <span>Obsidian</span>
+          </a>
+          <a href="#" class="rhs-link-item">
+            <i data-lucide="external-link" class="w-3.5 h-3.5 text-stone-500 shrink-0"></i>
+            <span>obsidian.md</span>
+          </a>
+          <div class="text-xs text-stone-600 mt-3 italic">2 links in this note</div>
+        </div>
+
+        <!-- Backlinks -->
+        <div x-show="rhsTab === 'backlinks'" class="p-3 space-y-1.5">
+          <div class="text-xs font-semibold text-stone-400 uppercase tracking-wider mb-2">Backlinks</div>
+          <a href="#" class="rhs-link-item">
+            <i data-lucide="file-text" class="w-3.5 h-3.5 text-stone-500 shrink-0"></i>
+            <span>index.md</span>
+          </a>
+          <a href="#" class="rhs-link-item">
+            <i data-lucide="file-text" class="w-3.5 h-3.5 text-stone-500 shrink-0"></i>
+            <span>getting-started.md</span>
+          </a>
+          <div class="text-xs text-stone-600 mt-3 italic">2 notes link here</div>
+        </div>
+
+        <!-- History -->
+        <div x-show="rhsTab === 'history'" class="p-3 space-y-1.5">
+          <div class="text-xs font-semibold text-stone-400 uppercase tracking-wider mb-2">Version History</div>
+          <div class="rhs-history-item">
+            <div class="flex items-center gap-2">
+              <i data-lucide="git-commit-horizontal" class="w-3.5 h-3.5 text-stone-500 shrink-0"></i>
+              <span class="text-xs text-stone-300">Update welcome content</span>
+            </div>
+            <span class="text-[10px] text-stone-600 ml-6">2 hours ago</span>
+          </div>
+          <div class="rhs-history-item">
+            <div class="flex items-center gap-2">
+              <i data-lucide="git-commit-horizontal" class="w-3.5 h-3.5 text-stone-500 shrink-0"></i>
+              <span class="text-xs text-stone-300">Add math examples</span>
+            </div>
+            <span class="text-[10px] text-stone-600 ml-6">1 day ago</span>
+          </div>
+          <div class="rhs-history-item">
+            <div class="flex items-center gap-2">
+              <i data-lucide="git-commit-horizontal" class="w-3.5 h-3.5 text-stone-500 shrink-0"></i>
+              <span class="text-xs text-stone-300">Initial commit</span>
+            </div>
+            <span class="text-[10px] text-stone-600 ml-6">3 days ago</span>
+          </div>
+        </div>
+
+        <!-- Info -->
+        <div x-show="rhsTab === 'info'" class="p-3 space-y-3">
+          <div class="text-xs font-semibold text-stone-400 uppercase tracking-wider mb-2">Properties</div>
+          <div class="space-y-2">
+            <div class="rhs-info-row">
+              <span class="text-stone-500">Words</span>
+              <span class="text-stone-300" x-text="wordCount"></span>
+            </div>
+            <div class="rhs-info-row">
+              <span class="text-stone-500">Characters</span>
+              <span class="text-stone-300" x-text="content.length"></span>
+            </div>
+            <div class="rhs-info-row">
+              <span class="text-stone-500">Lines</span>
+              <span class="text-stone-300" x-text="content.split('\n').length"></span>
+            </div>
+          </div>
+          <div class="border-t border-stone-800 pt-3 mt-3">
+            <div class="text-xs font-semibold text-stone-400 uppercase tracking-wider mb-2">Frontmatter</div>
+            <div class="text-xs text-stone-600 italic">No frontmatter in this note</div>
+          </div>
+        </div>
+
+      </div>
+    </aside>
+
+  </div>
+
+  <!-- ═══ Link Preview Popup ═══ -->
+  <div
+    x-show="previewVisible"
+    x-transition:enter="transition ease-out duration-150"
+    x-transition:enter-start="opacity-0 scale-95"
+    x-transition:enter-end="opacity-100 scale-100"
+    x-transition:leave="transition ease-in duration-100"
+    x-transition:leave-start="opacity-100 scale-100"
+    x-transition:leave-end="opacity-0 scale-95"
+    class="link-preview-card"
+    :style="'left:' + previewX + 'px; top:' + previewY + 'px'"
+    @click.away="previewVisible = false"
+  >
+    <div class="link-preview-title" x-text="previewTitle"></div>
+    <div class="link-preview-body prose prose-invert prose-sm" x-html="previewHtml"></div>
+  </div>
+
+  <!-- Bottom status bar (full width, always visible) -->
+  <footer class="fixed bottom-0 left-0 right-0 z-50 flex items-center justify-between px-4 py-1.5 bg-stone-900/80 backdrop-blur border-t border-stone-800 text-[11px] text-stone-500">
+    <span x-text="wordCount + ' words'"></span>
+    <span x-text="modeLabel"></span>
+  </footer>
+
+  <!-- Initialize Lucide icons, debounced to avoid infinite loop -->
+  <script>
+    document.addEventListener('DOMContentLoaded', function() {
+      lucide.createIcons();
+
+      var _iconTimer = null;
+      var _iconBusy = false;
+      var observer = new MutationObserver(function() {
+        if (_iconBusy) return;
+        clearTimeout(_iconTimer);
+        _iconTimer = setTimeout(function() {
+          // Only run if there are unconverted <i> tags left
+          if (!document.querySelector('i[data-lucide]')) return;
+          _iconBusy = true;
+          lucide.createIcons();
+          // Let the DOM settle before allowing another run
+          requestAnimationFrame(function() { _iconBusy = false; });
+        }, 100);
+      });
+      observer.observe(document.body, { childList: true, subtree: true });
+    });
+  </script>
+</body>
+</html>

@@ -1,0 +1,22 @@
+#!/usr/bin/env node
+const http = require('http');
+let text = process.argv.slice(2).join(' ');
+if (!text) {
+  // Read from stdin if no args
+  text = require('fs').readFileSync('/dev/stdin', 'utf8').trim();
+}
+if (!text) { console.log('Usage: say <message>  OR  echo "msg" | say'); process.exit(1); }
+const data = JSON.stringify({ text });
+const req = http.request('http://localhost:5002/respond', {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(data) }
+}, (res) => {
+  let b = '';
+  res.on('data', c => b += c);
+  res.on('end', () => {
+    if (res.statusCode === 200) console.log('sent');
+    else console.log('error:', b);
+  });
+});
+req.write(data);
+req.end();
