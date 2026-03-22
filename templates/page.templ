@@ -1,0 +1,339 @@
+package templates
+
+import "encoding/json"
+
+// NoteEntry is a lightweight note reference for lists.
+type NoteEntry struct {
+	Path  string
+	Title string
+}
+
+templ Page(notes []NoteEntry, activePath, activeTitle, activeContent string) {
+	@Layout("Markdown Page", pageBody(notes, activePath, activeTitle, activeContent))
+}
+
+templ pageBody(notes []NoteEntry, activePath, activeTitle, activeContent string) {
+	<body
+		class="bg-stone-950 text-stone-200 h-screen overflow-hidden"
+		x-data="markdownApp"
+		x-on:keydown.escape="if (editing) toggle()"
+	>
+		<!-- Inject initial note content before init.js -->
+		@initialContentScript(activeContent)
+		<script src="/static/init.js"></script>
+		<div class="flex h-full w-full relative">
+			@lhsPanel(notes, activePath)
+			@centerContent()
+			@rhsBackdrop()
+			@rhsPanel()
+		</div>
+		@linkPreview()
+		@statusBar()
+	</body>
+}
+
+templ lhsPanel(notes []NoteEntry, activePath string) {
+	<aside
+		class="lhs-panel shrink-0 h-full flex bg-stone-900 border-r border-stone-800"
+		x-bind:class="{'lhs-gone': lhsState === 'gone', 'lhs-icons': lhsState === 'icons', 'lhs-full': lhsState === 'full'}"
+	>
+		<div class="lhs-icon-strip flex flex-col items-center py-2 gap-1 border-r border-stone-800/50">
+			@lhsIconBtn("files", "file-text", "Files")
+			@lhsIconBtn("search", "search", "Search")
+			@lhsIconBtn("recent", "clock", "Recent")
+			@lhsIconBtn("unread", "mail", "Unread")
+		</div>
+		<div class="lhs-content flex-1 overflow-y-auto" x-show="lhsState === 'full'" x-transition.opacity.duration.150ms>
+			@lhsFiles(notes, activePath)
+			@lhsSearch()
+			@lhsRecent()
+			@lhsUnread()
+		</div>
+	</aside>
+}
+
+templ lhsIconBtn(section, icon, title string) {
+	<button
+		x-on:click={ "selectLhsSection('" + section + "')" }
+		class="lhs-icon-btn"
+		x-bind:class={ "lhsState === 'full' && lhsSection === '" + section + "' ? 'text-violet-400 bg-stone-800' : 'text-stone-500 hover:text-stone-300 hover:bg-stone-800/50'" }
+		title={ title }
+	>
+		<i data-lucide={ icon }></i>
+	</button>
+}
+
+templ lhsFiles(notes []NoteEntry, activePath string) {
+	<div x-show="lhsSection === 'files'" id="note-list">
+		<div class="px-3 py-3 text-xs font-semibold text-stone-400 uppercase tracking-wider">Files</div>
+		@NoteList(notes, activePath)
+	</div>
+}
+
+// NoteList renders the file list — used both in full page and as HTMX partial.
+templ NoteList(notes []NoteEntry, activePath string) {
+	<div class="px-2 space-y-0.5">
+		for _, n := range notes {
+			<div
+				class={ "lhs-item group cursor-pointer", templ.KV("lhs-item-active", n.Path == activePath) }
+				hx-get={ "/notes/" + n.Path }
+				hx-target="#note-display"
+				hx-swap="innerHTML"
+				hx-push-url={ "/notes/" + n.Path }
+			>
+				<i data-lucide="file-text" class={ "w-4 h-4 shrink-0", templ.KV("text-violet-400", n.Path == activePath), templ.KV("text-stone-500", n.Path != activePath) }></i>
+				<span class="truncate">{ n.Title }</span>
+			</div>
+		}
+	</div>
+}
+
+templ lhsSearch() {
+	<div x-show="lhsSection === 'search'">
+		<div class="px-3 py-3 text-xs font-semibold text-stone-400 uppercase tracking-wider">Search</div>
+		<div class="px-3 pb-3">
+			<div class="flex items-center gap-2 px-2.5 py-1.5 rounded-md bg-stone-800 border border-stone-700">
+				<i data-lucide="search" class="w-3.5 h-3.5 text-stone-500 shrink-0"></i>
+				<input type="text" placeholder="Search notes..." class="bg-transparent text-sm text-stone-300 placeholder-stone-600 outline-none w-full"/>
+			</div>
+		</div>
+		<div class="px-3 text-xs text-stone-600 italic">Type to search across all notes</div>
+	</div>
+}
+
+templ lhsRecent() {
+	<div x-show="lhsSection === 'recent'">
+		<div class="px-3 py-3 text-xs font-semibold text-stone-400 uppercase tracking-wider">Recent</div>
+		<div class="px-2 space-y-0.5">
+			<div class="text-xs text-stone-600 px-2 py-4 italic">Coming soon</div>
+		</div>
+	</div>
+}
+
+templ lhsUnread() {
+	<div x-show="lhsSection === 'unread'">
+		<div class="px-3 py-3 text-xs font-semibold text-stone-400 uppercase tracking-wider">Unread</div>
+		<div class="px-2 space-y-0.5">
+			<div class="text-xs text-stone-600 px-2 py-4 italic">Coming soon</div>
+		</div>
+	</div>
+}
+
+templ centerContent() {
+	<div
+		class="main-content flex-1 flex flex-col min-w-0 h-full"
+		x-bind:class="{'lhs-is-gone': lhsState === 'gone', 'lhs-is-icons': lhsState === 'icons', 'lhs-is-full': lhsState === 'full'}"
+	>
+		@topBar()
+		<!-- Note display area — HTMX swaps content here -->
+		<div id="note-display" class="flex-1 overflow-hidden flex flex-col">
+			<!-- Preview pane -->
+			<main
+				x-show="!editing"
+				x-transition:enter="transition ease-out duration-150"
+				x-transition:enter-start="opacity-0 translate-y-1"
+				x-transition:enter-end="opacity-100 translate-y-0"
+				class="flex-1 overflow-y-auto px-5 py-6"
+			>
+				<article class="prose prose-invert prose-stone max-w-none" x-html="rendered"></article>
+			</main>
+			<!-- Editor pane -->
+			<div
+				x-show="editing"
+				x-transition:enter="transition ease-out duration-150"
+				x-transition:enter-start="opacity-0 translate-y-1"
+				x-transition:enter-end="opacity-100 translate-y-0"
+				class="flex-1 overflow-hidden flex flex-col"
+			>
+				<div x-show="editorLoading" class="flex items-center justify-center py-12 text-stone-500 text-sm">
+					Loading editor...
+				</div>
+				<div id="editor" class="flex-1 overflow-y-auto"></div>
+			</div>
+		</div>
+	</div>
+}
+
+// NoteContent is the HTMX partial returned when loading a note via click.
+// It includes a script that updates the Alpine component's content.
+templ NoteContent(title, content string) {
+	<!-- Preview pane -->
+	<main
+		class="flex-1 overflow-y-auto px-5 py-6"
+	>
+		<article class="prose prose-invert prose-stone max-w-none" x-html="rendered"></article>
+	</main>
+	<!-- Editor pane (preserved for toggle) -->
+	<div
+		x-show="editing"
+		class="flex-1 overflow-hidden flex flex-col"
+	>
+		<div x-show="editorLoading" class="flex items-center justify-center py-12 text-stone-500 text-sm">
+			Loading editor...
+		</div>
+		<div id="editor" class="flex-1 overflow-y-auto"></div>
+	</div>
+	@noteUpdateScript(content)
+}
+
+func toJSON(s string) string {
+	b, _ := json.Marshal(s)
+	return string(b)
+}
+
+templ noteUpdateScript(content string) {
+	<div id="note-data" class="hidden" data-content={ toJSON(content) }></div>
+}
+
+templ initialContentScript(content string) {
+	<div id="initial-data" class="hidden" data-content={ toJSON(content) }></div>
+}
+
+
+templ topBar() {
+	<header class="sticky top-0 z-20 flex items-center justify-between px-3 py-2 bg-stone-900/80 backdrop-blur border-b border-stone-800">
+		<div class="flex items-center gap-2 min-w-0">
+			<button
+				x-on:click="toggleLhs()"
+				class="p-1.5 rounded-lg text-stone-400 hover:text-stone-200 hover:bg-stone-800 transition-colors"
+				title="Toggle navigation"
+			>
+				<span x-show="lhsState === 'gone'"><i data-lucide="menu" class="w-4 h-4"></i></span>
+				<span x-show="lhsState !== 'gone'"><i data-lucide="panel-left-close" class="w-4 h-4"></i></span>
+			</button>
+			<h1 class="text-sm font-semibold tracking-wide text-stone-400 truncate" x-text="title"></h1>
+		</div>
+		<div class="shrink-0 ml-3 flex items-center gap-1.5">
+			<button
+				x-show="editing"
+				x-transition
+				x-on:click="toggleSource()"
+				class="px-2.5 py-1.5 rounded-lg text-xs font-medium transition-colors bg-stone-800 text-stone-400 hover:bg-stone-700 hover:text-stone-200"
+				x-text="livePreview ? 'Source' : 'Live'"
+			></button>
+			<button
+				x-on:click="toggle()"
+				class="px-3 py-1.5 rounded-lg text-xs font-medium transition-colors"
+				x-bind:class="editing ? 'bg-violet-600 text-white hover:bg-violet-500' : 'bg-stone-800 text-stone-300 hover:bg-stone-700'"
+			>
+				<span x-text="editing ? 'Read' : 'Edit'"></span>
+			</button>
+			<button
+				x-on:click="toggleRhs()"
+				class="p-1.5 rounded-lg transition-colors"
+				x-bind:class="rhsOpen ? 'text-violet-400 bg-stone-800' : 'text-stone-400 hover:text-stone-200 hover:bg-stone-800'"
+				title="Toggle tools panel"
+			>
+				<i data-lucide="panel-right" class="w-4 h-4"></i>
+			</button>
+		</div>
+	</header>
+}
+
+templ rhsBackdrop() {
+	<div
+		x-show="rhsOpen"
+		x-transition:enter="transition ease-out duration-200"
+		x-transition:enter-start="opacity-0"
+		x-transition:enter-end="opacity-100"
+		x-transition:leave="transition ease-in duration-150"
+		x-transition:leave-start="opacity-100"
+		x-transition:leave-end="opacity-0"
+		x-on:click="rhsOpen = false"
+		class="md:hidden fixed inset-0 bg-black/50 z-30"
+	></div>
+}
+
+templ rhsPanel() {
+	<aside
+		class="rhs-panel shrink-0 h-full z-40 bg-stone-900 border-l border-stone-800 flex flex-col"
+		x-bind:class="rhsOpen ? 'rhs-open' : 'rhs-gone'"
+	>
+		@rhsTabBar()
+		<div class="flex-1 overflow-y-auto">
+			@rhsLinks()
+			@rhsBacklinks()
+			@rhsHistory()
+			@rhsInfo()
+		</div>
+	</aside>
+}
+
+templ rhsTabBar() {
+	<div class="flex border-b border-stone-800 shrink-0">
+		<template x-for="tab in [{id:'links',label:'Links',icon:'link'},{id:'backlinks',label:'Backlinks',icon:'arrow-left'},{id:'history',label:'History',icon:'git-commit-horizontal'},{id:'info',label:'Info',icon:'info'}]">
+			<button
+				x-on:click="rhsTab = tab.id"
+				class="flex-1 px-2 py-2.5 text-[11px] font-medium transition-colors text-center"
+				x-bind:class="rhsTab === tab.id ? 'text-violet-400 border-b-2 border-violet-400' : 'text-stone-500 hover:text-stone-300'"
+				x-text="tab.label"
+			></button>
+		</template>
+	</div>
+}
+
+templ rhsLinks() {
+	<div x-show="rhsTab === 'links'" class="p-3 space-y-1.5">
+		<div class="text-xs font-semibold text-stone-400 uppercase tracking-wider mb-2">Outgoing Links</div>
+		<div class="text-xs text-stone-600 italic">Parsed from note content</div>
+	</div>
+}
+
+templ rhsBacklinks() {
+	<div x-show="rhsTab === 'backlinks'" class="p-3 space-y-1.5">
+		<div class="text-xs font-semibold text-stone-400 uppercase tracking-wider mb-2">Backlinks</div>
+		<div class="text-xs text-stone-600 italic">Coming soon</div>
+	</div>
+}
+
+templ rhsHistory() {
+	<div x-show="rhsTab === 'history'" class="p-3 space-y-1.5">
+		<div class="text-xs font-semibold text-stone-400 uppercase tracking-wider mb-2">Version History</div>
+		<div class="text-xs text-stone-600 italic">Coming soon</div>
+	</div>
+}
+
+templ rhsInfo() {
+	<div x-show="rhsTab === 'info'" class="p-3 space-y-3">
+		<div class="text-xs font-semibold text-stone-400 uppercase tracking-wider mb-2">Properties</div>
+		<div class="space-y-2">
+			<div class="rhs-info-row">
+				<span class="text-stone-500">Words</span>
+				<span class="text-stone-300" x-text="wordCount"></span>
+			</div>
+			<div class="rhs-info-row">
+				<span class="text-stone-500">Characters</span>
+				<span class="text-stone-300" x-text="content.length"></span>
+			</div>
+			<div class="rhs-info-row">
+				<span class="text-stone-500">Lines</span>
+				<span class="text-stone-300" x-text="content.split('\n').length"></span>
+			</div>
+		</div>
+	</div>
+}
+
+templ linkPreview() {
+	<div
+		x-show="previewVisible"
+		x-transition:enter="transition ease-out duration-150"
+		x-transition:enter-start="opacity-0 scale-95"
+		x-transition:enter-end="opacity-100 scale-100"
+		x-transition:leave="transition ease-in duration-100"
+		x-transition:leave-start="opacity-100 scale-100"
+		x-transition:leave-end="opacity-0 scale-95"
+		class="link-preview-card"
+		x-bind:style="'left:' + previewX + 'px; top:' + previewY + 'px'"
+		x-on:click.away="previewVisible = false"
+	>
+		<div class="link-preview-title" x-text="previewTitle"></div>
+		<div class="link-preview-body prose prose-invert prose-sm" x-html="previewHtml"></div>
+	</div>
+}
+
+templ statusBar() {
+	<footer class="fixed bottom-0 left-0 right-0 z-50 flex items-center justify-between px-4 py-1.5 bg-stone-900/80 backdrop-blur border-t border-stone-800 text-[11px] text-stone-500">
+		<span x-text="wordCount + ' words'"></span>
+		<span x-text="modeLabel"></span>
+	</footer>
+}
