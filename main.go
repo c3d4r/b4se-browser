@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/a-h/templ"
+	"github.com/c3d4r/b4se-browser/internal/auth"
 	"github.com/c3d4r/b4se-browser/internal/storage"
 	"github.com/c3d4r/b4se-browser/templates"
 	"github.com/labstack/echo/v4"
@@ -14,11 +15,13 @@ import (
 
 func main() {
 	store := storage.NewLocal("content")
+	a := auth.New()
 
 	e := echo.New()
 
 	e.Use(middleware.Logger())
 	e.Use(middleware.Recover())
+	e.Use(a.Middleware)
 
 	// Static files — serve with proper cache control
 	fs := http.FileServer(http.Dir("static"))
@@ -32,13 +35,21 @@ func main() {
 		return nil
 	})
 
+	// Auth routes
+	e.GET("/login", func(c echo.Context) error {
+		return render(c, http.StatusOK, templates.LoginPage())
+	})
+	e.GET("/auth/login", a.LoginHandler)
+	e.GET("/auth/callback", a.CallbackHandler)
+	e.GET("/auth/logout", a.LogoutHandler)
+
 	// Page routes
 	e.GET("/", func(c echo.Context) error {
+		user := auth.GetUser(c)
 		paths, err := store.List(c.Request().Context())
 		if err != nil {
 			return err
 		}
-		// Load first note as default
 		var notes []templates.NoteEntry
 		var activeNote *storage.Note
 		for _, p := range paths {
@@ -54,7 +65,7 @@ func main() {
 		if activeNote == nil {
 			activeNote = &storage.Note{Path: "empty", Title: "No Notes", Content: "# No Notes\n\nAdd markdown files to the `content/` directory."}
 		}
-		return render(c, http.StatusOK, templates.Page(notes, activeNote.Path, activeNote.Title, activeNote.Content))
+		return render(c, http.StatusOK, templates.Page(notes, activeNote.Path, activeNote.Title, activeNote.Content, user.Login, user.AvatarURL))
 	})
 
 	// HTMX: load a note's content
